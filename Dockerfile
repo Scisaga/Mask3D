@@ -7,7 +7,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PROJECT_DIR=/opt/mask3d
 
 # 安装常用工具、ssh、编译依赖、openblas
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN sed -i '/developer.download.nvidia.com/d' /etc/apt/sources.list /etc/apt/sources.list.d/* || true && \
+    apt-get update && apt-get install -y --no-install-recommends \
     build-essential wget curl ca-certificates unzip git vim htop sudo openssh-server \
     zlib1g-dev libffi-dev libssl-dev libbz2-dev libreadline-dev libsqlite3-dev \
     libncursesw5-dev tk-dev libgdbm-dev libnss3-dev liblzma-dev uuid-dev \
