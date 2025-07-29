@@ -1,0 +1,10 @@
+Port 22
+PermitRootLogin no
+PasswordAuthentication no
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
+UsePAM yes
+LoginGraceTime 30
+ClientAliveInterval 120
+ClientAliveCountMax 3
+Subsystem sftp /usr/lib/openssh/sftp-server

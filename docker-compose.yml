@@ -1,0 +1,23 @@
+services:
+  mask3d-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        http_proxy: ${http_proxy:-}
+        https_proxy: ${https_proxy:-}
+        no_proxy: ${no_proxy:-}
+    container_name: mask3d-dev
+    shm_size: "12g"
+    ports:
+      - "2222:22"
+      - "5000:5000"
+    volumes:
+      - /data:/data
+    gpus: all
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - NVIDIA_DISABLE_REQUIRE=1
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
