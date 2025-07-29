@@ -31,7 +31,9 @@ WORKDIR ${PROJECT_DIR}
 RUN conda init bash && \
     conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
     conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r && \
-    conda env create -f environment.yml && conda clean -afy
+    conda env create -f environment.yml && \
+    source activate mask3d_cuda113 && pip install pip==24.0 && \
+    conda clean -afy
 ENV CONDA_DEFAULT_ENV=mask3d_cuda113
 ENV PATH="/opt/conda/envs/mask3d_cuda113/bin:$PATH"
 SHELL ["/bin/bash", "-c"]
