@@ -28,7 +28,10 @@ RUN chown -R root:root ${PROJECT_DIR}
 
 # 创建 conda 环境并安装依赖
 WORKDIR ${PROJECT_DIR}
-RUN conda env create -f environment.yml && conda clean -afy
+RUN conda init bash && \
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r && \
+    conda env create -f environment.yml && conda clean -afy
 ENV CONDA_DEFAULT_ENV=mask3d_cuda113
 ENV PATH="/opt/conda/envs/mask3d_cuda113/bin:$PATH"
 SHELL ["/bin/bash", "-c"]
