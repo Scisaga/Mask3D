@@ -135,7 +135,6 @@ dependencies:
       - ninja==1.10.2.3
       - numpy==1.24.2
       - oauthlib==3.2.2
-      - omegaconf==2.0.6
       - open3d==0.17.0
       - opencv-python-headless==4.7.0.72
       - pandas==2.0.0
