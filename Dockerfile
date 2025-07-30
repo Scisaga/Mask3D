@@ -26,12 +26,14 @@ COPY environment.yml ${PROJECT_DIR}/environment.yml
 COPY . ${PROJECT_DIR}
 RUN chown -R root:root ${PROJECT_DIR}
 
-RUN apt-get update && \
-    apt-get install -y \
-        build-essential \
-        libyaml-dev \
-        python3-dev \
-        && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    python3-dev \
+    libpython3-dev \
+    cython \
+    libjpeg-dev \
+    zlib1g-dev \
+    libyaml-dev
 
 # 创建 conda 环境并安装依赖
 WORKDIR ${PROJECT_DIR}
