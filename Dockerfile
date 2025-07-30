@@ -34,8 +34,6 @@ RUN apt-get install --no-install-recommends -y \
     libyaml-dev && \
     rm -rf /var/lib/apt/lists/*
 
-SHELL ["/bin/bash", "-l", "-c"]
-
 # 创建 conda 环境并安装依赖
 WORKDIR ${PROJECT_DIR}
 RUN conda init bash && \
@@ -48,25 +46,31 @@ ENV CONDA_DEFAULT_ENV=mask3d_cuda113
 ENV PATH="/opt/conda/envs/mask3d_cuda113/bin:$PATH"
 
 # RUN echo "conda activate mask3d_cuda113" >> ~/.bashrc
-RUN echo 'conda activate mask3d_cuda113' >/etc/profile.d/conda_auto.sh
+RUN echo 'conda activate mask3d_cuda113' > /etc/profile.d/conda_auto.sh
 
 # 安装 PyTorch、torchvision、torch-scatter、detectron2、pytorch-lightning
-RUN conda activate mask3d_cuda113 && \
+RUN conda run -n mask3d_cuda113 \
     pip install --no-cache-dir torch==1.12.1+cu113 torchvision==0.13.1+cu113 --extra-index-url https://download.pytorch.org/whl/cu113 && \
+    conda run -n mask3d_cuda113 \
     pip install --no-cache-dir torch-scatter -f https://data.pyg.org/whl/torch-1.12.1+cu113.html && \
+    conda run -n mask3d_cuda113 \
     pip install --no-cache-dir 'git+https://github.com/facebookresearch/detectron2.git@710e7795d0eeadf9def0e7ef957eea13532e34cf' --no-deps && \
+    conda run -n mask3d_cuda113 \
     pip install --no-cache-dir pytorch-lightning==1.7.2
 
 # 编译 third_party 依赖
-RUN conda activate mask3d_cuda113 && \
-    mkdir -p third_party && cd third_party && \
+RUN mkdir -p third_party && cd third_party && \
+    # 安装 MinkowskiEngine
     git clone --recursive "https://github.com/NVIDIA/MinkowskiEngine" && \
     cd MinkowskiEngine && git checkout 02fc608bea4c0549b0a7b00ca1bf15dee4a0b228 && \
-    python setup.py install --force_cuda --blas=openblas && \
+    conda run -n mask3d_cuda113 python setup.py install --force_cuda --blas=openblas && \
     cd .. && \
+    # 安装 ScanNet
     git clone https://github.com/ScanNet/ScanNet.git && \
     cd ScanNet/Segmentator && git checkout 3e5726500896748521a6ceb81271b0f5b2c0e7d2 && make && \
-    cd ../../pointnet2 && python setup.py install
+    cd ../../ && \
+    # 安装 pointnet2
+    cd pointnet2 && conda run -n mask3d_cuda113 python setup.py install
 
 # 创建用户 dev
 RUN useradd -m -s /bin/bash -u 1000 dev && \
