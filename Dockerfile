@@ -43,17 +43,19 @@ RUN conda init bash && \
     conda env create -f environment.yml && conda clean -afy
 ENV CONDA_DEFAULT_ENV=mask3d_cuda113
 ENV PATH="/opt/conda/envs/mask3d_cuda113/bin:$PATH"
-SHELL ["/bin/bash", "-c"]
+SHELL ["/bin/bash", "-l", "-c"]
+
+RUN echo "conda activate mask3d_cuda113" >> ~/.bashrc
 
 # 安装 PyTorch、torchvision、torch-scatter、detectron2、pytorch-lightning
-RUN source activate mask3d_cuda113 && \
+RUN conda activate mask3d_cuda113 && \
     pip install --no-cache-dir torch==1.12.1+cu113 torchvision==0.13.1+cu113 --extra-index-url https://download.pytorch.org/whl/cu113 && \
     pip install --no-cache-dir torch-scatter -f https://data.pyg.org/whl/torch-1.12.1+cu113.html && \
     pip install --no-cache-dir 'git+https://github.com/facebookresearch/detectron2.git@710e7795d0eeadf9def0e7ef957eea13532e34cf' --no-deps && \
     pip install --no-cache-dir pytorch-lightning==1.7.2
 
 # 编译 third_party 依赖
-RUN source activate mask3d_cuda113 && \
+RUN conda activate mask3d_cuda113 && \
     mkdir -p third_party && cd third_party && \
     git clone --recursive "https://github.com/NVIDIA/MinkowskiEngine" && \
     cd MinkowskiEngine && git checkout 02fc608bea4c0549b0a7b00ca1bf15dee4a0b228 && \
