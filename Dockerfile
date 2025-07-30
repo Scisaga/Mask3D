@@ -12,8 +12,7 @@ RUN sed -i '/developer.download.nvidia.com/d' /etc/apt/sources.list /etc/apt/sou
     build-essential wget curl ca-certificates unzip git vim htop sudo openssh-server \
     zlib1g-dev libffi-dev libssl-dev libbz2-dev libreadline-dev libsqlite3-dev \
     libncursesw5-dev tk-dev libgdbm-dev libnss3-dev liblzma-dev uuid-dev \
-    libopenblas-dev cmake make && \
-    rm -rf /var/lib/apt/lists/*
+    libopenblas-dev cmake make
 
 # 安装 Miniconda
 RUN wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/conda.sh && \
@@ -24,16 +23,18 @@ ENV PATH="/opt/conda/bin:$PATH"
 # 拷贝环境配置和项目代码
 COPY environment.yml ${PROJECT_DIR}/environment.yml
 COPY . ${PROJECT_DIR}
-RUN chown -R root:root ${PROJECT_DIR}
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get install --no-install-recommends -y \
     build-essential \
     python3-dev \
     libpython3-dev \
     cython \
     libjpeg-dev \
     zlib1g-dev \
-    libyaml-dev
+    libyaml-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+SHELL ["/bin/bash", "-l", "-c"]
 
 # 创建 conda 环境并安装依赖
 WORKDIR ${PROJECT_DIR}
@@ -41,11 +42,13 @@ RUN conda init bash && \
     conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
     conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r && \
     conda env create -f environment.yml && conda clean -afy
-ENV CONDA_DEFAULT_ENV=mask3d_cuda113
-ENV PATH="/opt/conda/envs/mask3d_cuda113/bin:$PATH"
-SHELL ["/bin/bash", "-l", "-c"]
 
-RUN echo "conda activate mask3d_cuda113" >> ~/.bashrc
+ENV CONDA_DEFAULT_ENV=mask3d_cuda113
+
+ENV PATH="/opt/conda/envs/mask3d_cuda113/bin:$PATH"
+
+# RUN echo "conda activate mask3d_cuda113" >> ~/.bashrc
+RUN echo 'conda activate mask3d_cuda113' >/etc/profile.d/conda_auto.sh
 
 # 安装 PyTorch、torchvision、torch-scatter、detectron2、pytorch-lightning
 RUN conda activate mask3d_cuda113 && \
@@ -71,6 +74,8 @@ RUN useradd -m -s /bin/bash -u 1000 dev && \
     chmod 700 /home/dev/.ssh && chown -R dev:dev /home/dev/.ssh && \
     echo "dev ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/dev && \
     chmod 0440 /etc/sudoers.d/dev
+
+RUN chown -R dev:dev ${PROJECT_DIR}
 
 # 拷贝 SSH 配置和密钥
 COPY sshd_config /etc/ssh/sshd_config
