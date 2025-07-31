@@ -10,11 +10,11 @@ services:
     container_name: mask3d-dev
     shm_size: "12g"
     ports:
-      - "2222:22"
-      - "5000:5000"
+      - "52001:22"
+      - "50001:5000"
     volumes:
-      - /data:/data
-    gpus: all
+      - /opt/sky-fabric/data:/data
+    runtime: nvidia
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
