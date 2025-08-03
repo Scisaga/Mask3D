@@ -1,4 +1,4 @@
-FROM nvidia/cuda:11.3.1-cudnn8-runtime-ubuntu20.04
+FROM nvidia/cuda:11.3.1-cudnn8-devel-ubuntu20.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=Asia/Shanghai \
@@ -41,22 +41,23 @@ RUN conda init bash && \
     conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r && \
     conda env create -f environment.yml && conda clean -afy
 
-ENV CONDA_DEFAULT_ENV=mask3d_cuda113
-
-ENV PATH="/opt/conda/envs/mask3d_cuda113/bin:$PATH"
-
 # RUN echo "conda activate mask3d_cuda113" >> ~/.bashrc
 RUN echo 'conda activate mask3d_cuda113' > /etc/profile.d/conda_auto.sh
 
+RUN conda env list && conda info -e
+
 # 安装 PyTorch、torchvision、torch-scatter、detectron2、pytorch-lightning
-RUN conda run -n mask3d_cuda113 \
-    pip install --no-cache-dir torch==1.12.1+cu113 torchvision==0.13.1+cu113 --extra-index-url https://download.pytorch.org/whl/cu113 && \
-    conda run -n mask3d_cuda113 \
-    pip install --no-cache-dir torch-scatter -f https://data.pyg.org/whl/torch-1.12.1+cu113.html && \
-    conda run -n mask3d_cuda113 \
-    pip install --no-cache-dir 'git+https://github.com/facebookresearch/detectron2.git@710e7795d0eeadf9def0e7ef957eea13532e34cf' --no-deps && \
-    conda run -n mask3d_cuda113 \
-    pip install --no-cache-dir pytorch-lightning==1.7.2
+RUN conda run -n mask3d_cuda113 pip install --no-cache-dir torch==1.12.1+cu113 torchvision==0.13.1+cu113 --extra-index-url https://download.pytorch.org/whl/cu113 && \
+    conda run -n mask3d_cuda113 pip install --no-cache-dir torch-scatter -f https://data.pyg.org/whl/torch-1.12.1+cu113.html && \
+    conda run -n mask3d_cuda113 pip install --no-cache-dir 'git+https://github.com/facebookresearch/detectron2.git@710e7795d0eeadf9def0e7ef957eea13532e34cf' --no-deps && \
+    conda run -n mask3d_cuda113 pip install --no-cache-dir pytorch-lightning==1.7.2 --no-deps
+
+RUN conda run -n mask3d_cuda113 python -c "import torch; print(torch.__version__); print('CUDA:', torch.version.cuda)"
+
+# 在安装好 torch 后添加
+ENV CUDA_HOME=/usr/local/cuda
+ENV FORCE_CUDA=1
+ENV TORCH_CUDA_ARCH_LIST="7.5"
 
 # 编译 third_party 依赖
 RUN mkdir -p third_party && cd third_party && \
@@ -71,6 +72,7 @@ RUN mkdir -p third_party && cd third_party && \
     cd ../../ && \
     # 安装 pointnet2
     cd pointnet2 && conda run -n mask3d_cuda113 python setup.py install
+    
 
 # 创建用户 dev
 RUN useradd -m -s /bin/bash -u 1000 dev && \
@@ -86,8 +88,27 @@ COPY sshd_config /etc/ssh/sshd_config
 COPY authorized_keys /home/dev/.ssh/authorized_keys
 RUN chown dev:dev /home/dev/.ssh/authorized_keys && chmod 600 /home/dev/.ssh/authorized_keys
 
+RUN ssh-keygen -A
+
+# 将 Conda 初始化代码添加到 .bashrc 中
+RUN echo "\
+# >>> conda initialize >>>\n\
+# !! Contents within this block are managed by 'conda init' !!\n\
+__conda_setup=\"$('/opt/conda/bin/conda' 'shell.bash' 'hook' 2> /dev/null)\"\n\
+if [ $? -eq 0 ]; then\n\
+    eval \"$__conda_setup\"\n\
+else\n\
+    if [ -f \"/opt/conda/etc/profile.d/conda.sh\" ]; then\n\
+        . \"/opt/conda/etc/profile.d/conda.sh\"\n\
+    else\n\
+        export PATH=\"/opt/conda/bin:$PATH\"\n\
+    fi\n\
+fi\n\
+unset __conda_setup\n\
+# <<< conda initialize <<<
+conda activate mask3d_cuda113" >> /home/dev/.bashrc
+
 # 切换默认目录和用户
-USER dev
 WORKDIR ${PROJECT_DIR}
 
 EXPOSE 22 5000

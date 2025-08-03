@@ -136,10 +136,16 @@ class InstanceSegmentation(pl.LightningModule):
             print("no targets")
             return None
 
+        # 用体素坐标还原为原尺度的 raw xyz；不要再从 features 中切走通道
         raw_coordinates = None
-        if self.config.data.add_raw_coordinates:
-            raw_coordinates = data.features[:, -3:]
-            data.features = data.features[:, :-3]
+        if getattr(self.config.data, "add_raw_coordinates", False):
+            vs = getattr(self.config.data, "voxel_size", 1.0)
+            # data.coordinates: [N, 4] -> (b, x, y, z)
+            raw_coordinates = data.coordinates[:, 1:].float() * vs
+        # 防御：确保特征通道数 > 0
+        assert data.features.size(1) > 0, \
+            f"Empty features ({tuple(data.features.shape)}). " \
+            f"Do not slice features for raw_coordinates."
 
         data = ME.SparseTensor(
             coordinates=data.coordinates,
@@ -455,15 +461,18 @@ class InstanceSegmentation(pl.LightningModule):
         #    return None
 
         if len(data.coordinates) == 0:
-            return 0.0
+            return {}
 
         raw_coordinates = None
-        if self.config.data.add_raw_coordinates:
-            raw_coordinates = data.features[:, -3:]
-            data.features = data.features[:, :-3]
-
-        if raw_coordinates.shape[0] == 0:
-            return 0.0
+        if getattr(self.config.data, "add_raw_coordinates", False):
+            vs = getattr(self.config.data, "voxel_size", 1.0)
+            raw_coordinates = data.coordinates[:, 1:].float() * vs
+            if raw_coordinates.shape[0] == 0:
+                return {}
+        # 防御：确保特征通道数 > 0
+        assert data.features.size(1) > 0, \
+            f"Empty features ({tuple(data.features.shape)}). " \
+            f"Do not slice features for raw_coordinates."
 
         data = ME.SparseTensor(
             coordinates=data.coordinates,
@@ -486,7 +495,7 @@ class InstanceSegmentation(pl.LightningModule):
                 "only a single point gives nans in cross-attention"
                 == run_err.args[0]
             ):
-                return None
+                return {}
             else:
                 raise run_err
 
@@ -553,7 +562,7 @@ class InstanceSegmentation(pl.LightningModule):
                 f"val_{k}": v.detach().cpu().item() for k, v in losses.items()
             }
         else:
-            return 0.0
+            return {}
 
     def test_step(self, batch, batch_idx):
         return self.eval_step(batch, batch_idx)
@@ -991,18 +1000,17 @@ class InstanceSegmentation(pl.LightningModule):
 
         head_results, tail_results, common_results = [], [], []
 
-        box_ap_50 = eval_det(
-            self.bbox_preds, self.bbox_gt, ovthresh=0.5, use_07_metric=False
-        )
-        box_ap_25 = eval_det(
-            self.bbox_preds, self.bbox_gt, ovthresh=0.25, use_07_metric=False
-        )
-        mean_box_ap_25 = sum([v for k, v in box_ap_25[-1].items()]) / len(
-            box_ap_25[-1].keys()
-        )
-        mean_box_ap_50 = sum([v for k, v in box_ap_50[-1].items()]) / len(
-            box_ap_50[-1].keys()
-        )
+        box_ap_50 = eval_det(self.bbox_preds, self.bbox_gt, ovthresh=0.5, use_07_metric=False)
+        box_ap_25 = eval_det(self.bbox_preds, self.bbox_gt, ovthresh=0.25, use_07_metric=False)
+
+        def _mean_from_last(dlist):
+            if isinstance(dlist, list) and len(dlist) > 0 and isinstance(dlist[-1], dict) and len(dlist[-1]) > 0:
+                vals = list(dlist[-1].values())
+                return sum(vals) / len(vals)
+            return 0.0
+
+        mean_box_ap_25 = _mean_from_last(box_ap_25)
+        mean_box_ap_50 = _mean_from_last(box_ap_50)
 
         ap_results[f"{log_prefix}_mean_box_ap_25"] = mean_box_ap_25
         ap_results[f"{log_prefix}_mean_box_ap_50"] = mean_box_ap_50
@@ -1022,21 +1030,27 @@ class InstanceSegmentation(pl.LightningModule):
         root_path = f"eval_output"
         base_path = f"{root_path}/instance_evaluation_{self.config.general.experiment_name}_{self.current_epoch}"
 
-        if self.validation_dataset.dataset_name in [
-            "scannet",
-            "stpls3d",
-            "scannet200",
-        ]:
-            gt_data_path = f"{self.validation_dataset.data_dir[0]}/instance_gt/{self.validation_dataset.mode}"
-        else:
-            gt_data_path = f"{self.validation_dataset.data_dir[0]}/instance_gt/Area_{self.config.general.area}"
+        # --- robust path handling ---
+        from pathlib import Path as _P
+        data_root = self.validation_dataset.data_dir
+        if isinstance(data_root, (list, tuple)):
+            data_root = data_root[0]
+        data_root = _P(data_root)  # accepts str or Path
 
-        pred_path = f"{base_path}/tmp_output.txt"
+        ds_name = getattr(self.validation_dataset, "dataset_name", "")
+        if ds_name in ["scannet", "stpls3d", "scannet200"]:
+            gt_data_path = data_root / "instance_gt" / self.validation_dataset.mode
+        elif ds_name == "s3dis":
+            gt_data_path = data_root / "instance_gt" / f"Area_{self.config.general.area}"
+        else:
+            # 默认走按 split 的目录（适配 real3dad 等）
+            gt_data_path = data_root / "instance_gt" / self.validation_dataset.mode
+
+        pred_path = _P(base_path) / "tmp_output.txt"
 
         log_prefix = f"val"
 
-        if not os.path.exists(base_path):
-            os.makedirs(base_path)
+        _P(base_path).mkdir(parents=True, exist_ok=True)
 
         try:
             if self.validation_dataset.dataset_name == "s3dis":
@@ -1109,7 +1123,7 @@ class InstanceSegmentation(pl.LightningModule):
                                     )
                                 )
                             else:
-                                assert (False, "class not known!")
+                                assert False, "class not known!"
                     else:
                         ap_results[
                             f"{log_prefix}_{class_name}_val_ap"
@@ -1229,24 +1243,44 @@ class InstanceSegmentation(pl.LightningModule):
         if self.config.general.export:
             return
 
+        # 先跑 AP/导出等
         self.eval_instance_epoch_end()
+
+        # ------- 从这里开始替换原来的聚合逻辑 -------
+        from collections import defaultdict
+        import torch
+
+        def _safe_mean(seq, default=0.0):
+            seq = list(seq)
+            return float(sum(seq) / len(seq)) if len(seq) else default
+
+        # 有些情况下 outputs 可能是 None
+        outputs = outputs or []
 
         dd = defaultdict(list)
         for output in outputs:
-            for key, val in output.items():  # .items() in Python 3.
-                dd[key].append(val)
+            # 只汇总 dict；float/None/其他类型跳过
+            if not isinstance(output, dict):
+                continue
+            for key, val in output.items():
+                # 规范化为 float
+                if isinstance(val, (float, int)):
+                    dd[key].append(float(val))
+                elif torch.is_tensor(val):
+                    dd[key].append(val.detach().cpu().item())
+                else:
+                    try:
+                        dd[key].append(float(val))
+                    except Exception:
+                        pass  # 不能转成数值的项跳过
 
-        dd = {k: statistics.mean(v) for k, v in dd.items()}
+        # step 级 -> epoch 级
+        dd = {k: _safe_mean(v) for k, v in dd.items()}
 
-        dd["val_mean_loss_ce"] = statistics.mean(
-            [item for item in [v for k, v in dd.items() if "loss_ce" in k]]
-        )
-        dd["val_mean_loss_mask"] = statistics.mean(
-            [item for item in [v for k, v in dd.items() if "loss_mask" in k]]
-        )
-        dd["val_mean_loss_dice"] = statistics.mean(
-            [item for item in [v for k, v in dd.items() if "loss_dice" in k]]
-        )
+        # 三个“均值 of 均值”也用安全均值，防止空集报错
+        dd["val_mean_loss_ce"]   = _safe_mean([v for k, v in dd.items() if "loss_ce"   in k])
+        dd["val_mean_loss_mask"] = _safe_mean([v for k, v in dd.items() if "loss_mask" in k])
+        dd["val_mean_loss_dice"] = _safe_mean([v for k, v in dd.items() if "loss_dice" in k])
 
         self.log_dict(dd)
 

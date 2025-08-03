@@ -5,16 +5,16 @@
 
 # splits
 train_mode: train
-validation_mode: validation
-test_mode: validation # test  # validation
+validation_mode: val
+test_mode: test # test  # validation
 
 # dataset
 ignore_label: 255
 add_raw_coordinates: true # 3dim
-add_colors: true # 3dim
+add_colors: false # 3dim
 add_normals: false # 3dim
 in_channels: 3 # in_channels = 3 * (add_normals + add_colors + add_raw_coordinates)
-num_labels: 20
+num_labels: 3
 # num_labels: 41
 add_instance: ${general.add_instance}
 task: ${general.task}

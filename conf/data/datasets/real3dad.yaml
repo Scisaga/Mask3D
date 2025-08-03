@@ -1,0 +1,52 @@
+# @package data
+
+train_dataset:
+  _target_: datasets.real3dad.Real3DADDataset
+  dataset_name: "real3dad"
+  data_dir: /data/processed/real3dad     # 你的 root
+  mode: ${data.train_mode}               # train/val/test 由 conf/data/indoor.yaml 定义
+  voxel_size: ${data.voxel_size}
+  ignore_label: ${data.ignore_label}
+  num_labels: ${data.num_labels}
+  add_raw_coordinates: true
+  add_colors: false
+  add_normals: false
+  add_instance: true
+  filter_out_classes: []                 # collate 会引用这个；没有就会报你看到的插值错误
+  label_offset: 0                        # 你数据里“背景=0，缺陷>0”，不需要偏移就设 0
+  instance_gt: True
+  instance_gt_dir: /data/processed/real3dad/instance_gt
+
+validation_dataset:
+  _target_: datasets.real3dad.Real3DADDataset
+  dataset_name: "real3dad"
+  data_dir: /data/processed/real3dad
+  mode: ${data.validation_mode}
+  voxel_size: ${data.voxel_size}
+  ignore_label: ${data.ignore_label}
+  num_labels: ${data.num_labels}
+  add_raw_coordinates: true
+  add_colors: false
+  add_normals: false
+  add_instance: true
+  filter_out_classes: []
+  label_offset: 0
+  instance_gt: True
+  instance_gt_dir: /data/processed/real3dad/instance_gt
+
+test_dataset:
+  _target_: datasets.real3dad.Real3DADDataset
+  dataset_name: "real3dad"
+  data_dir: /data/processed/real3dad
+  mode: ${data.test_mode}
+  voxel_size: ${data.voxel_size}
+  ignore_label: ${data.ignore_label}
+  num_labels: ${data.num_labels}
+  add_raw_coordinates: true
+  add_colors: false
+  add_normals: false
+  add_instance: true
+  filter_out_classes: []
+  label_offset: 0
+  instance_gt: True
+  instance_gt_dir: /data/processed/real3dad/instance_gt

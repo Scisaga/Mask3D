@@ -1,3 +1,4 @@
+# models/res16unet.py
 import MinkowskiEngine.MinkowskiOps as me
 from MinkowskiEngine import MinkowskiReLU
 
@@ -239,6 +240,9 @@ class Res16UNetBase(ResNetBase):
         self.relu = MinkowskiReLU(inplace=True)
 
     def forward(self, x):
+
+        # print(f"[Res16UNetBase] input feature shape: {x.features.shape}")  # 通常是 [B, C]
+
         feature_maps = []
 
         out = self.conv0p1s1(x)

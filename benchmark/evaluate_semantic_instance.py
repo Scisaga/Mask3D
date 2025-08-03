@@ -32,6 +32,10 @@ import inspect
 from copy import deepcopy
 from uuid import uuid4
 
+import logging
+
+logger = logging.getLogger("mask3d.eval")
+
 import torch
 
 try:
@@ -220,6 +224,9 @@ def evaluate_matches(matches):
                     y_true = np.append(y_true, cur_true)
                     y_score = np.append(y_score, cur_score)
 
+                # 
+                logger.info(f"has_gt: {has_gt}, has_pred: {has_pred}")
+
                 # compute average precision
                 if has_gt and has_pred:
                     # compute precision recall curve first
@@ -282,6 +289,8 @@ def evaluate_matches(matches):
 
                 elif has_gt:
                     ap_current = 0.0
+                elif has_pred:
+                    ap_current = 0.0   # 无GT但有预测 → 全是FP，AP=0（惩罚）
                 else:
                     ap_current = float("nan")
                 ap[di, li, oi] = ap_current
@@ -312,6 +321,21 @@ def compute_averages(aps):
             aps[d_inf, li, o25]
         )
     return avg_dict
+
+
+def _count_totals(matches):
+    """统计总体 GT / Pred 数量，以及空场景指标。"""
+    gt_total, pred_total, empty_scenes, empty_ok = 0, 0, 0, 0
+    for m in matches:
+        gt_num = sum(len(matches[m]["gt"][lbl]) for lbl in CLASS_LABELS)
+        pred_num = sum(len(matches[m]["pred"][lbl]) for lbl in CLASS_LABELS)
+        gt_total += gt_num
+        pred_total += pred_num
+        if gt_num == 0:                 # 空场景
+            empty_scenes += 1
+            if pred_num == 0:           # 空场景且无预测 → 理想
+                empty_ok += 1
+    return gt_total, pred_total, empty_scenes, empty_ok
 
 
 def make_pred_info(pred: dict):
@@ -362,7 +386,11 @@ def assign_instances_for_scan(pred: dict, gt_file: str):
         label_name = ID_TO_LABEL[label_id]
         # read the mask
         pred_mask = pred_info[uuid]["mask"]
+        if len(pred_mask) != len(gt_ids):
+            logger.info(f"Len mismatch: {gt_file}, pred_mask {len(pred_mask)}, gt_ids {len(gt_ids)}")
+
         assert len(pred_mask) == len(gt_ids)
+
         # convert to binary
         pred_mask = np.not_equal(pred_mask, 0)
         num = np.count_nonzero(pred_mask)
@@ -957,10 +985,23 @@ def evaluate(
     all_mean_cov = [[] for _ in range(NUM_CLASSES)]
     all_mean_weighted_cov = [[] for _ in range(NUM_CLASSES)]
 
-    print("evaluating", len(preds), "scans...")
+    logger.info(f"evaluating {len(preds)} scans...")
+    
     matches = {}
     for i, (k, v) in enumerate(preds.items()):
+
+        # 模型的分类头设成 2 类（model_num_classes: 2），因此 pred_classes 只会是 {0,1}。
+        # 改成整体 +1（0→1，1→2）：
+        if dataset == "real3dad":
+            v = v.copy()
+            v["pred_classes"] = np.asarray(v["pred_classes"], dtype=int) + 1  # 0->1, 1->2
+
+        logger.info(f"evaluating scan {k}, {v}")
+
         gt_file = os.path.join(gt_path, k + ".txt")
+
+        logger.info(f"ground truth file: {gt_file}")
+
         if not os.path.isfile(gt_file):
             util.print_error(
                 "Scan {} does not match any gt file".format(k), user_fault=True
@@ -1082,6 +1123,15 @@ def evaluate(
 
                 tpsins[i_sem] += tp
                 fpsins[i_sem] += fp
+        
+        if dataset == "real3dad":
+            opt["min_region_sizes"] = np.array([1])  # 你的点数较少可放宽阈值
+            CLASS_LABELS = ["bulge", "sink"]
+            VALID_CLASS_IDS = np.array([1, 2], dtype=int)  # 注意是你GT里用的“千位编码”的类别id
+            ID_TO_LABEL = {1: "bulge", 2: "sink"}
+            LABEL_TO_ID = {"bulge": 1, "sink": 2}
+
+        logger.info(f"dataset: {dataset}")
 
         matches_key = os.path.abspath(gt_file)
         # assign gt to predictions
@@ -1089,9 +1139,33 @@ def evaluate(
         matches[matches_key] = {}
         matches[matches_key]["gt"] = gt2pred
         matches[matches_key]["pred"] = pred2gt
-        sys.stdout.write("\rscans processed: {}".format(i + 1))
-        sys.stdout.flush()
-    print("")
+        #sys.stdout.write("\rscans processed: {}".format(i + 1))
+        #sys.stdout.flush()
+
+
+    # ---- 新增：统计整体情况，若整个 split 无任何 GT 实例，则跳过 AP 计算并返回空场景指标 ----
+    gt_total, pred_total, empty_scenes, empty_ok = _count_totals(matches)
+    logger.info(f"Total GT instances: {gt_total}, Total Pred instances: {pred_total}, Empty scenes: {empty_scenes}, Empty scenes with no predictions: {empty_ok}")
+
+    if gt_total == 0:
+
+        fill = 1.0 if pred_total == 0 else 0.0
+
+        avgs = {
+            "all_ap": fill,
+            "all_ap_50%": fill,
+            "all_ap_25%": fill,
+            "classes": {lbl: {"ap": fill, "ap50%": fill, "ap25%": fill}
+                        for lbl in CLASS_LABELS},
+            "empty_scene_num": empty_scenes,
+            "empty_scene_ok": empty_ok,
+            "empty_scene_acc": (empty_ok / empty_scenes) if empty_scenes > 0 else float("nan"),
+            "empty_scene_fp": pred_total
+        }
+        print_results(avgs)
+        write_result_file(avgs, output_file)
+        return avgs
+
     ap_scores = evaluate_matches(matches)
     avgs = compute_averages(ap_scores)
 

@@ -1,4 +1,5 @@
-# Copyright (c) Facebook, Inc. and its affiliates.
+# models/criterion.py
+#  Copyright (c) Facebook, Inc. and its affiliates.
 # Modified by Bowen Cheng from https://github.com/facebookresearch/detr/blob/master/models/detr.py
 # Modified for Mask3D
 """
@@ -118,6 +119,8 @@ class SetCriterion(nn.Module):
             losses: list of all the losses to be applied. See get_loss for list of available losses.
         """
         super().__init__()
+
+        
         self.num_classes = num_classes - 1
         self.class_weights = class_weights
         self.matcher = matcher
@@ -163,7 +166,7 @@ class SetCriterion(nn.Module):
             src_logits.transpose(1, 2),
             target_classes,
             self.empty_weight,
-            ignore_index=253,
+            ignore_index=255,
         )
         losses = {"loss_ce": loss_ce}
         return losses

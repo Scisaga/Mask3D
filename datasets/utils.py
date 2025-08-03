@@ -218,6 +218,7 @@ class VoxelizeCollateMerge:
 def batch_instances(batch):
     new_batch = []
     for sample in batch:
+        
         for instance_id in np.unique(sample[2][:, 1]):
             new_batch.append(
                 (
@@ -252,6 +253,7 @@ def voxelize(
         original_coordinates,
         idx,
     ) = ([], [], [], [], [], [], [], [], [])
+
     voxelization_dict = {
         "ignore_label": ignore_label,
         # "quantization_size": self.voxel_size,
@@ -262,6 +264,9 @@ def voxelize(
     full_res_coords = []
 
     for sample in batch:
+
+        # print("voxelize feature shape 1: ", sample[1].shape)
+
         idx.append(sample[7])
         original_coordinates.append(sample[6])
         original_labels.append(sample[2])
@@ -287,6 +292,8 @@ def voxelize(
         sample_coordinates = coords[unique_map]
         coordinates.append(torch.from_numpy(sample_coordinates).int())
         sample_features = sample[1][unique_map]
+        # print(f"voxelize feature shape 1.1: {sample_features.shape}")
+
         features.append(torch.from_numpy(sample_features).float())
         if len(sample[2]) > 0:
             sample_labels = sample[2][unique_map]
@@ -397,6 +404,11 @@ def voxelize(
         target_full = []
         coordinates = []
         features = []
+
+    # if isinstance(features, torch.Tensor):
+    #     print(f"features shape 2: {tuple(features.shape)}")
+    # else:
+    #     print(f"features shape 2: {features[0].shape if len(features) > 0 else 'empty'}")
 
     if "train" not in mode:
         return (
