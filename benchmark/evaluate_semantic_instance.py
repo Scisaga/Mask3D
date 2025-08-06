@@ -225,7 +225,7 @@ def evaluate_matches(matches):
                     y_score = np.append(y_score, cur_score)
 
                 # 
-                logger.info(f"has_gt: {has_gt}, has_pred: {has_pred}")
+                # logger.info(f"has_gt: {has_gt}, has_pred: {has_pred}")
 
                 # compute average precision
                 if has_gt and has_pred:
@@ -985,7 +985,7 @@ def evaluate(
     all_mean_cov = [[] for _ in range(NUM_CLASSES)]
     all_mean_weighted_cov = [[] for _ in range(NUM_CLASSES)]
 
-    logger.info(f"evaluating {len(preds)} scans...")
+    # logger.info(f"evaluating {len(preds)} scans...")
     
     matches = {}
     for i, (k, v) in enumerate(preds.items()):
@@ -996,11 +996,11 @@ def evaluate(
             v = v.copy()
             v["pred_classes"] = np.asarray(v["pred_classes"], dtype=int) + 1  # 0->1, 1->2
 
-        logger.info(f"evaluating scan {k}, {v}")
+        # logger.info(f"evaluating scan {k}, {v}")
 
         gt_file = os.path.join(gt_path, k + ".txt")
 
-        logger.info(f"ground truth file: {gt_file}")
+        # logger.info(f"ground truth file: {gt_file}")
 
         if not os.path.isfile(gt_file):
             util.print_error(
@@ -1131,7 +1131,7 @@ def evaluate(
             ID_TO_LABEL = {1: "bulge", 2: "sink"}
             LABEL_TO_ID = {"bulge": 1, "sink": 2}
 
-        logger.info(f"dataset: {dataset}")
+        # logger.info(f"dataset: {dataset}")
 
         matches_key = os.path.abspath(gt_file)
         # assign gt to predictions

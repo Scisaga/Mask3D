@@ -31,13 +31,13 @@ general:
   on_crops: false
 
   scores_threshold: 0.2
-  iou_threshold: 1.0
+  iou_threshold: 0.5
 
   area: 5
 
   eval_inner_core: -1 # disabled
 
-  topk_per_image: 10
+  topk_per_image: 8
 
   ignore_mask_idx: []
 

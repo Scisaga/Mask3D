@@ -1,3 +1,4 @@
+# datasets/utils.py
 import MinkowskiEngine as ME
 import numpy as np
 import torch
@@ -39,6 +40,7 @@ class VoxelizeCollate:
         self.num_queries = num_queries
 
     def __call__(self, batch):
+        
         if ("train" in self.mode) and (
             self.small_crops or self.very_small_crops
         ):
@@ -229,6 +231,70 @@ def batch_instances(batch):
             )
     return new_batch
 
+def debug_sparse_collate_inputs(input_dict):
+    import traceback
+
+    coords = input_dict.get("coords", [])
+    feats  = input_dict.get("feats", [])
+    labs   = input_dict.get("labels", [])
+
+    print("="*20 + " [sparse_collate DEBUG] " + "="*20)
+    print(f"coords: {type(coords)}, len={len(coords)}")
+    print(f"feats : {type(feats )}, len={len(feats )}")
+    print(f"labels: {type(labs  )}, len={len(labs  )}")
+
+    # 全量 shape/type/异常高亮打印
+    def log_tensor_list(name, arr):
+        for i, item in enumerate(arr):
+            try:
+                s = getattr(item, 'shape', None)
+                t = type(item)
+                print(f"{name}[{i}] shape: {s}, type: {t}")
+                if s is None:
+                    print(f"  >>> [ERROR] {name}[{i}] 没有 shape 属性，内容：{item}")
+                elif not hasattr(item, 'ndim'):
+                    print(f"  >>> [ERROR] {name}[{i}] 没有 ndim 属性，内容：{item}")
+                elif item.ndim != 2:
+                    print(f"  >>> [ERROR] {name}[{i}] 非二维！shape: {s}, 内容：{item}")
+                elif s[1] != 3:
+                    print(f"  >>> [ERROR] {name}[{i}] 第二维不是3，shape: {s}, 内容：{item}")
+                if hasattr(item, "numel") and item.numel() == 0:
+                    print(f"  >>> [WARNING] {name}[{i}] 空tensor，内容：{item}")
+            except Exception as e:
+                print(f"{name}[{i}] error: {e}")
+                traceback.print_exc()
+
+    log_tensor_list("coords", coords)
+    log_tensor_list("feats" , feats)
+    log_tensor_list("labels", labs)
+
+    # 还可以打印每个元素的具体内容，只打印异常
+    for i, c in enumerate(coords):
+        if not hasattr(c, 'shape') or not hasattr(c, 'ndim') or c.ndim != 2 or (hasattr(c, 'shape') and c.shape[1] != 3) or (hasattr(c, "numel") and c.numel() == 0):
+            print(f"[DEBUG][coords异常] coords[{i}]: {c}")
+
+    for i, f in enumerate(feats):
+        if not hasattr(f, 'shape') or not hasattr(f, 'ndim') or f.ndim != 2 or (hasattr(f, "numel") and f.numel() == 0):
+            print(f"[DEBUG][feats异常] feats[{i}]: {f}")
+
+    for i, l in enumerate(labs):
+        if not hasattr(l, 'shape') or (hasattr(l, "numel") and l.numel() == 0):
+            print(f"[DEBUG][labels异常] labels[{i}]: {l}")
+
+    print("="*60)
+
+
+def ensure_2d(arr, last_dim=3):
+    if isinstance(arr, np.ndarray):
+        if arr.ndim == 1:
+            arr = arr.reshape(1, -1)
+        assert arr.shape[1] == last_dim, f"ndarray bad shape: {arr.shape}"
+    elif isinstance(arr, torch.Tensor):
+        if arr.dim() == 1:
+            arr = arr.unsqueeze(0)
+        assert arr.shape[1] == last_dim, f"tensor bad shape: {arr.shape}"
+    return arr
+
 
 def voxelize(
     batch,
@@ -290,19 +356,25 @@ def voxelize(
         inverse_maps.append(inverse_map)
 
         sample_coordinates = coords[unique_map]
+        sample_coordinates = ensure_2d(sample_coordinates, last_dim=3)
         coordinates.append(torch.from_numpy(sample_coordinates).int())
-        sample_features = sample[1][unique_map]
-        # print(f"voxelize feature shape 1.1: {sample_features.shape}")
 
+        sample_features = sample[1][unique_map]
+        sample_features = ensure_2d(sample_features, last_dim=3)
+        # print(f"voxelize feature shape 1.1: {sample_features.shape}")
         features.append(torch.from_numpy(sample_features).float())
+
+    
         if len(sample[2]) > 0:
             sample_labels = sample[2][unique_map]
+            sample_labels = ensure_2d(sample_labels, last_dim=3)
             labels.append(torch.from_numpy(sample_labels).long())
 
     # Concatenate all lists
     input_dict = {"coords": coordinates, "feats": features}
     if len(labels) > 0:
         input_dict["labels"] = labels
+        # debug_sparse_collate_inputs(input_dict)
         coordinates, features, labels = ME.utils.sparse_collate(**input_dict)
     else:
         coordinates, features = ME.utils.sparse_collate(**input_dict)

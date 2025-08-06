@@ -4,10 +4,10 @@ _target_: models.Mask3D
 # transformer parameters
 hidden_dim: 128
 dim_feedforward: 1024
-num_queries: 10
+num_queries: 6
 num_heads: 8
 num_decoders: 3
-dropout: 0.0
+dropout: 0.05
 pre_norm: false
 use_level_embed: false
 normalize_pos_enc: true
@@ -23,7 +23,7 @@ random_queries: false
 use_np_features: false
 
 # sampling
-sample_sizes: [200, 800, 3200, 12800, 51200]
+sample_sizes: [32, 128, 512, 2048, 4096]
 max_sample_size: false # change false means sampling activated
 
 shared_decoder: true
