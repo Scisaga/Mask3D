@@ -8,6 +8,9 @@ from sklearn.cluster import DBSCAN
 
 
 def load_pcd_xyzn(pcd_path: str):
+    '''
+    读取 PCD 文件，返回 (N,3) xyz float32 和 (N,) 语义 int32
+    '''
     cloud = PyntCloud.from_file(pcd_path)
     df = cloud.points
     assert df.shape[1] == 4, f"{pcd_path} 需为 4 列 [x,y,z,semantic]"
@@ -40,56 +43,47 @@ def pack_single_instance(
     if sem_pp is None or sem_pp.ndim != 1 or sem_pp.shape[0] != xyz.shape[0]:
         raise ValueError("缺少有效的逐点语义，无法监督训练")
 
-    # 允许把 -1/255 视作忽略标签（若存在）
-    ignore_mask = (sem_pp == -1) | (sem_pp == 255)
-    valid_mask = ~ignore_mask
-    if not valid_mask.any():
-        return None  # 全部不可用
+    # 背景点
+    bg_mask = (sem_pp == bg_id)
+    instance_class_ids = [i for i in np.unique(sem_pp) if i != bg_id and i >= 0]
 
-    # 缺陷实例 = 非背景且有效
-    defect_mask = (sem_pp != bg_id) & valid_mask
-
-    if not defect_mask.any():
-        # 0 实例场景
+    # 只剩下背景
+    if len(instance_class_ids) == 0:
         if keep_empty:
             return {
                 "instance_labels_pp": np.zeros_like(sem_pp, dtype=np.int32),
                 "instance_masks": np.zeros((0, xyz.shape[0]), dtype=bool),
-                "semantic_labels_inst_raw": np.zeros((0,), dtype=np.int32),
                 "semantic_labels_inst": np.zeros((0,), dtype=np.int32),
             }
         else:
-            return None  # 在 train 集跳过
+            return None
 
-    # ====== 改动：基于空间聚类自动分割多个实例 ======
+    # ====== 基于空间聚类自动分割多个实例 ======
     instance_labels_pp = np.zeros_like(sem_pp, dtype=np.int32)
     instance_masks_list = []
     semantic_labels_inst = []
-    semantic_labels_inst_raw = []
     cur_instance_id = 1
 
-    for defect_id, (cat_id, cat_model) in zip([1, 2], [(1, 0), (2, 1)]):  # (原始, 训练用)
-        mask = (sem_pp == defect_id)
+    for class_id in instance_class_ids:
+        mask = (sem_pp == class_id)
         if not mask.any():
             continue
         xyz_def = xyz[mask]
         if xyz_def.shape[0] < min_samples:
             continue
-        # DBSCAN 聚类
         cluster = DBSCAN(eps=eps, min_samples=min_samples).fit(xyz_def)
-        labels = cluster.labels_  # -1为噪声
+        labels = cluster.labels_
         for inst_label in set(labels):
             if inst_label == -1:
-                continue  # 忽略噪声
-            # 全局点索引（mask对应原始点云中的下标）
+                continue
             inst_mask_global = np.zeros_like(sem_pp, dtype=bool)
             inst_mask_local = (labels == inst_label)
             inst_mask_global[np.where(mask)[0][inst_mask_local]] = True
             instance_labels_pp[inst_mask_global] = cur_instance_id
             instance_masks_list.append(inst_mask_global)
-            semantic_labels_inst.append(cat_model)
-            semantic_labels_inst_raw.append(cat_id)
+            semantic_labels_inst.append(class_id)  # 直接用 class_id
             cur_instance_id += 1
+
 
     if len(instance_masks_list) == 0:
         # 全是噪声或极少点的情况
@@ -97,7 +91,6 @@ def pack_single_instance(
             return {
                 "instance_labels_pp": np.zeros_like(sem_pp, dtype=np.int32),
                 "instance_masks": np.zeros((0, xyz.shape[0]), dtype=bool),
-                "semantic_labels_inst_raw": np.zeros((0,), dtype=np.int32),
                 "semantic_labels_inst": np.zeros((0,), dtype=np.int32),
             }
         else:
@@ -108,24 +101,22 @@ def pack_single_instance(
     return {
         "instance_labels_pp": instance_labels_pp,        # (N,) 0=背景, 1~K为实例编号
         "instance_masks": instance_masks,                # (K,N) bool
-        "semantic_labels_inst_raw": np.array(semantic_labels_inst_raw, dtype=np.int32),   # (K,) 1/2 -> 评估用
-        "semantic_labels_inst":     np.array(semantic_labels_inst, dtype=np.int32),       # (K,) 0/1 -> 训练用
+        "semantic_labels_inst": np.array(semantic_labels_inst, dtype=np.int32),       # (K,) 0/1/2
     }
 
 
 def save_sample_pt(out_path: Path,
-                   xyz, sem_pp_train, inst_pp, inst_masks, sem_inst_model, sem_inst_raw, meta: dict):
+                   xyz, sem_pp, inst_pp, inst_masks, sem_labels_inst, meta: dict):
     '''
     保存单个样本到 .pt 文件
     '''
     out_path.parent.mkdir(parents=True, exist_ok=True)
     obj = {
         "points": xyz,                                # (N,3)
-        "semantic_labels_pp": sem_pp_train,           # (N,) 255/0/1  (255忽略, 0=bulge, 1=sink)
-        "instance_labels_pp": inst_pp,                # (N,) 0/1
+        "semantic_labels_pp": sem_pp,                 # (N,) 0/1/2
+        "instance_labels_pp": inst_pp,                # (N,) 0/1/2/... (0=背景)
         "instance_masks": inst_masks,                 # (K,N) bool
-        "semantic_labels_inst": sem_inst_model,       # (K,) 0/1  <- 训练用
-        "semantic_labels_inst_eval": sem_inst_raw,    # (K,) 1/2  <- 评估用（备份）
+        "semantic_labels_inst": sem_labels_inst,       # (K,) 0/1/2
         "meta": meta
     }
     torch.save(obj, str(out_path))
@@ -173,10 +164,10 @@ def convert_dataset(
     with open(out_root / "meta" / "category2id.json", "w", encoding="utf-8") as f:
         json.dump(category2id, f, ensure_ascii=False, indent=2)
 
-    #
-    #
-    # 采集文件（过滤 hybrid），按工件类型分层采样
-    samples_by_type = dict()  # key: 工件类型（sub），value: [(cat, pcd_path)]
+
+    # 简化版本
+    # 收集全部样本（含类型信息）
+    all_samples = []
     for sub in sorted(os.listdir(root)):
         sub_dir = root / sub
         if not sub_dir.is_dir():
@@ -190,108 +181,39 @@ def convert_dataset(
                 if d in fname:
                     cat = d
                     break
-            samples_by_type.setdefault(sub, []).append((cat, p))
+            all_samples.append((sub, cat, p))
 
-    # 分层采样
-    split_samples = {"train": [], "val": [], "test": []}
+    print(f"Total samples: {len(all_samples)}")
+
+    # 打乱并分割
     rng = np.random.default_rng(2025)
-    for type_name, samples_one_type in samples_by_type.items():
-        # 按缺陷类别分类
-        by_defect = {"bulge": [], "sink": [], "good": []}
-        for cat, pcd_path in samples_one_type:
-            by_defect[cat].append((cat, pcd_path))
+    indices = np.arange(len(all_samples))
+    rng.shuffle(indices)
 
-        assigned = {"train": [], "val": [], "test": []}
+    n_train = int(len(all_samples) * split_ratio[0])
+    n_val = int(len(all_samples) * split_ratio[1])
+    n_test = len(all_samples) - n_train - n_val
 
-        # 1. 先确保 train 和 test 各有 bulge 和 sink（如果样本数允许）
-        for defect in ["bulge", "sink"]:
-            arr = by_defect[defect]
-            rng.shuffle(arr)
-            if len(arr) >= 2:
-                assigned["train"].append(arr[0])
-                assigned["test"].append(arr[1])
-                remain = arr[2:]
-            elif len(arr) == 1:
-                assigned["train"].append(arr[0])
-                remain = []
-            else:
-                remain = []
-            by_defect[defect] = remain  # 剩余待后续分配
+    split_indices = {
+        "train": indices[:n_train],
+        "val": indices[n_train:n_train + n_val],
+        "test": indices[n_train + n_val:]
+    }
 
-        # 2. 合并所有剩余样本（good+bulge+sink），按比例切分到三集
-        remain_all = by_defect["bulge"] + by_defect["sink"] + by_defect["good"]
-        n_remain = len(remain_all)
-        n_train = int(n_remain * split_ratio[0])
-        n_val = int(n_remain * split_ratio[1])
-        indices = np.arange(n_remain)
-        rng.shuffle(indices)
-        for i in indices[:n_train]:
-            assigned["train"].append(remain_all[i])
-        for i in indices[n_train:n_train + n_val]:
-            assigned["val"].append(remain_all[i])
-        for i in indices[n_train + n_val:]:
-            assigned["test"].append(remain_all[i])
+    split_samples = {split: [all_samples[i] for i in idxs] for split, idxs in split_indices.items()}
 
-        # 3. 汇总到全局 split_samples
-        for split in ("train", "val", "test"):
-            split_samples[split].extend(assigned[split])
-
-
-    #
-    # 简化版本
-    # 收集全部样本（含类型信息）
-    # all_samples = []
-    # for sub in sorted(os.listdir(root)):
-    #     sub_dir = root / sub
-    #     if not sub_dir.is_dir():
-    #         continue
-    #     pcds = sorted(glob.glob(str(sub_dir / "test_neo" / "*.pcd")))
-    #     pcds = [p for p in pcds if "hybrid" not in os.path.basename(p)]
-    #     for p in pcds:
-    #         fname = os.path.basename(p).lower()
-    #         cat = 'good'
-    #         for d in categories[1:]:
-    #             if d in fname:
-    #                 cat = d
-    #                 break
-    #         all_samples.append((sub, cat, p))
-
-    # print(f"Total samples: {len(all_samples)}")
-
-    # # 打乱并分割
-    # rng = np.random.default_rng(2025)
-    # indices = np.arange(len(all_samples))
-    # rng.shuffle(indices)
-
-    # n_train = int(len(all_samples) * split_ratio[0])
-    # n_val = int(len(all_samples) * split_ratio[1])
-    # n_test = len(all_samples) - n_train - n_val
-
-    # split_indices = {
-    #     "train": indices[:n_train],
-    #     "val": indices[n_train:n_train + n_val],
-    #     "test": indices[n_train + n_val:]
-    # }
-
-    # split_samples = {split: [all_samples[i] for i in idxs] for split, idxs in split_indices.items()}
-
-    
-    ###
-    ###
     ###
     split_lists = {"train": [], "val": [], "test": []}
     skipped_train_empty = 0  # 统计：train 中因无实例而跳过的样本
 
     for split in ("train", "val", "test"):
-        for cat, pcd_path in split_samples[split]:
+        for sub, cat, pcd_path in split_samples[split]:
 
-            folder = os.path.basename(os.path.dirname(os.path.dirname(pcd_path)))
-            scene_id = folder + "_" +Path(pcd_path).stem
+            scene_id = f"{sub}_{Path(pcd_path).stem}"
 
             # 读取点与逐点语义
             xyz, sem_pp = load_pcd_xyzn(pcd_path)
 
-            # >>>>> 加入以下验证逻辑 <<<<<
             # 1. 检查 shape 是否为 (N,3)，否则跳过
             if xyz.ndim != 2 or xyz.shape[1] != 3:
                 print(f"[SKIP] {scene_id} - xyz shape invalid: {xyz.shape}")
@@ -301,14 +223,9 @@ def convert_dataset(
             if xyz.shape[0] < 10:
                 print(f"[SKIP] {scene_id} - too few points: {xyz.shape[0]}")
                 continue
-            # <<<<< 结束验证逻辑 >>>>>
 
-
-            # 训练用逐点语义：good(0)->255, bulge(1)->0, sink(2)->1
+            #
             sem_pp_train = sem_pp.copy()
-            sem_pp_train[sem_pp_train == 0] = 255
-            sem_pp_train[sem_pp_train == 1] = 0
-            sem_pp_train[sem_pp_train == 2] = 1
 
             # 生成实例监督
             keep_empty = (split != "train")
@@ -317,7 +234,7 @@ def convert_dataset(
             if packed is None:
                 if split == "train":
                     skipped_train_empty += 1
-                    print(f"[WARN] {scene_id} ({split}) has no valid labels, skip.")
+                    print(f"[WARN] {scene_id} ({split}) has no valid inst labels, skip.")
                     continue
                 # else:
                 #     print(f"[WARN] {scene_id} ({split}) has no valid labels, skip.")
@@ -325,14 +242,13 @@ def convert_dataset(
 
             inst_pp   = packed["instance_labels_pp"]      # (N,)
             inst_masks= packed["instance_masks"]          # (K,N)
-            sem_inst_raw   = packed["semantic_labels_inst_raw"]    # (K,)
-            sem_inst_model = packed["semantic_labels_inst"]        # (K,)
+            sem_labels_inst = packed["semantic_labels_inst"]        # (K,)
 
             meta = {"file": pcd_path, "category": cat, "category_id": category2id[cat]}
 
             # 落盘
             out_file = out_root / split / f"{scene_id}.pt"
-            save_sample_pt(out_file, xyz, sem_pp_train, inst_pp, inst_masks, sem_inst_model, sem_inst_raw, meta)
+            save_sample_pt(out_file, xyz, sem_pp_train, inst_pp, inst_masks, sem_labels_inst, meta)
 
             # 生成并保存 GT 文件
             generate_gt_file(out_root, split, scene_id, sem_pp, inst_masks)

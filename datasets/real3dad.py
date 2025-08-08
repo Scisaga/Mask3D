@@ -99,14 +99,20 @@ class Real3DADDataset(Dataset):
         c2i_path = self.data_dir / "meta" / "category2id.json"
         assert c2i_path.exists(), f"[Real3DADDataset] missing {c2i_path}"
         cat2id = _load_category2id(c2i_path)
+        id2name = {int(v): k for k, v in cat2id.items()}
         all_ids = sorted(int(v) for v in cat2id.values())
         all_ids = [i for i in all_ids if i not in self.filter_out_classes]
         # 简单配色
         palette = [[180, 180, 180], [255, 0, 0], [0, 255, 0], [0, 128, 255], [255, 128, 0], [128, 0, 255]]
-        self._labels = {
-            cid: {"id": cid, "color": palette[k % len(palette)], "validation": True}
-            for k, cid in enumerate(all_ids)
-        }
+        self._labels = {}
+        for k, cid in enumerate(all_ids):
+            self._labels[cid] = {
+                "id": cid,
+                "name": id2name.get(cid, f"class_{cid}"),  # ★ 补上 name
+                "color": palette[k % len(palette)],
+                "validation": True,
+            }
+
         self.num_classes = len(self._labels)
 
     # ---- 兼容上层访问属性 ----
@@ -137,6 +143,7 @@ class Real3DADDataset(Dataset):
 
         # 实例标签
         if self.add_instance:
+
             if "instance_labels_pp" in obj and obj["instance_labels_pp"] is not None \
                and len(obj["instance_labels_pp"]) == len(sem):
                 inst = np.asarray(obj["instance_labels_pp"], dtype=np.int64, order="C")

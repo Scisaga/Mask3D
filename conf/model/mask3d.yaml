@@ -7,7 +7,7 @@ dim_feedforward: 1024
 num_queries: 6
 num_heads: 8
 num_decoders: 3
-dropout: 0.05
+dropout: 0.0
 pre_norm: false
 use_level_embed: false
 normalize_pos_enc: true

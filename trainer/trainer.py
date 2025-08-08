@@ -1,3 +1,4 @@
+# trainer/trainer.py
 import gc
 from contextlib import nullcontext
 from pathlib import Path
@@ -1045,6 +1046,9 @@ class InstanceSegmentation(pl.LightningModule):
         else:
             # 默认走按 split 的目录（适配 real3dad 等）
             gt_data_path = data_root / "instance_gt" / self.validation_dataset.mode
+            
+        #print(self.preds)
+        #print(f"Using GT data path: {gt_data_path}")
 
         pred_path = _P(base_path) / "tmp_output.txt"
 
