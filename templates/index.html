@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mask3D Web Inference</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-left">Mask3D Web Inference</div>
+    <div class="nav-right">
+      <label for="pointSize">Point Size</label>
+      <input type="range" id="pointSize" min="1" max="10" value="2" />
+      <button id="resetView">Reset View</button>
+      <button id="inferBtn" disabled>Infer</button>
+    </div>
+  </nav>
+  <main class="content">
+    <section class="panel left">
+      <div id="inputZone" class="drop-zone">
+        <p>Drag & drop point cloud here or click to select.</p>
+        <input type="file" id="fileInput" accept=".pcd" hidden />
+      </div>
+      <div id="inputViewer" class="viewer"></div>
+      <div id="fileInfo" class="info"></div>
+    </section>
+    <section class="panel right">
+      <div id="resultViewer" class="viewer"></div>
+      <div class="filters">
+        <div>
+          <label for="semanticFilter">Semantic:</label>
+          <select id="semanticFilter">
+            <option value="all">All</option>
+          </select>
+        </div>
+        <div>
+          <label for="instanceFilter">Instance:</label>
+          <select id="instanceFilter">
+            <option value="all">All</option>
+          </select>
+        </div>
+      </div>
+      <div id="stats" class="stats"></div>
+    </section>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
