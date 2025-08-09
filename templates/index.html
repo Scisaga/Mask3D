@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>SkyFab::点云推理引擎</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="preconnect" href="https://unpkg.com" />
+</head>
+<body>
+  <!-- 顶部导航 -->
+  <header class="topbar">
+    <div class="topbar__left">
+      <img src="/static/logo-deep-512.png" alt="SkyFab::PointCloud Infer" class="logo" width=48/>
+      <span class="brand">SkyFab 点云推理引擎</span>
+    </div>
+    <div class="topbar__right">
+      <label class="ctrl ctrl--slider">
+        <span>点大小</span>
+        <input id="pointSize" type="range" min="0.05" max="0.5" step="0.05" value="0.15" />
+      </label>
+      <button id="resetLeft" class="btn" title="重置左侧视图">重置视图</button>
+      <button id="inferBtn" class="btn btn--primary" disabled>推理</button>
+    </div>
+  </header>
+
+  <!-- 主体两栏 -->
+  <main class="main">
+    <!-- 左：原始点云 -->
+    <section class="panel">
+      <div class="panel__title">原始点云</div>
+
+      <div id="dropzone" class="dropzone">
+        <div class="dropzone__inner">
+          <div class="dz-icon">⤓</div>
+          <div class="dz-title">拖拽 PCD 文本到这里，或点击选择文件</div>
+          <div class="dz-sub">仅支持标准 ASCII 格式，三列：x y z</div>
+          <input id="fileInput" type="file" accept=".pcd,.txt,.xyz" />
+        </div>
+      </div>
+
+      <div id="leftViewer" class="viewer" aria-label="原始点云视图"></div>
+
+      <div id="fileInfo" class="info-list">
+        <div class="muted">尚未加载文件</div>
+      </div>
+    </section>
+
+    <!-- 右：推理结果 -->
+    <section class="panel">
+      <div class="panel__title">推理结果</div>
+      <div class="panel__toolbar">
+        <div class="segmented">
+          <label><input type="radio" name="colorMode" value="semantic" checked />着色：语义</label>
+          <label><input type="radio" name="colorMode" value="instance" />着色：实例</label>
+        </div>
+      </div>
+
+      <div id="rightViewer" class="viewer" aria-label="推理结果视图"></div>
+
+      <div class="filters">
+        <div class="filter-col">
+          <div class="filter-col__title">语义标签</div>
+          <div id="semanticList" class="tag-list muted">无数据</div>
+        </div>
+        <div class="filter-col">
+          <div class="filter-col__title">实例标签</div>
+          <div id="instanceList" class="tag-list muted">无数据</div>
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="stats-col">
+          <div class="stats-col__title">语义统计</div>
+          <div id="semanticStats" class="stats-list muted">无数据</div>
+        </div>
+        <div class="stats-col">
+          <div class="stats-col__title">实例统计</div>
+          <div id="instanceStats" class="stats-list muted">无数据</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- JS（ESM 方式按版本引入 three 与 OrbitControls） -->
+  <!-- 告诉浏览器 "three" 与 "three/addons/" 去哪里加载 -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

@@ -34,6 +34,7 @@ def _get_engine():
         _ENGINE = Mask3DInferencer(cfg)
     return _ENGINE
 
+
 def create_app():
     app = Flask(__name__, static_folder="static", template_folder="templates")
     app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB
@@ -56,6 +57,7 @@ def create_app():
 
             return jsonify({"pcd": out_pcd})
         except Exception as e:
+            e.print(f"推理失败: {e}")
             return jsonify({"error": str(e)}), 500
 
     @app.get("/healthz")

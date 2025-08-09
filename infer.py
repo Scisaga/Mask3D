@@ -189,6 +189,8 @@ class Mask3DInferencer:
         # classes: 形状 (M,)，每个实例的语义类别ID（已通过 _remap_model_output 做过ID映射到数据集原ID）
         classes= np.asarray(pred["pred_classes"])
 
+        # print(classes)
+
         N = masks.shape[0]
         # 若没有任何候选实例（M=0），直接给所有点填“忽略语义 + 无实例”
         if masks.shape[1] == 0:
@@ -205,10 +207,15 @@ class Mask3DInferencer:
         # 形状广播：masks_bool (N, M) 与 scores (M,) -> masked_scores (N, M)
         masked_scores = np.where(masks_bool, scores[None, :], -np.inf)
 
+        # print(masked_scores.shape, masked_scores)
+
         # j_max[i] = 点 i 选择的实例索引（分数最高的那个 j）
         # 注意：如果某点完全不被任何实例覆盖，masked_scores[i,:] 全是 -inf，
         #       np.argmax 形式上会返回 0，但我们下面用 has_inst 屏蔽这种情况
         j_max = np.argmax(masked_scores, axis=1)
+
+        # for item in j_max:
+        #     print(item, end=' ')
 
         # has_inst[i] = 该点是否被至少一个实例覆盖
         has_inst = masks_bool.any(axis=1)

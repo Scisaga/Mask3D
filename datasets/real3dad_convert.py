@@ -26,7 +26,7 @@ def pack_single_instance(
     sem_pp: np.ndarray,
     bg_id: int = 0,
     keep_empty: bool = True,   # 是否为 0 实例场景生成“空监督”样本
-    eps: float = 2.5,          # DBSCAN 聚类半径（可调）
+    eps: float = 0.5,          # DBSCAN 聚类半径（可调）
     min_samples: int = 10,     # DBSCAN 最小聚类点数（可调）
 ):
     """
@@ -177,10 +177,11 @@ def convert_dataset(
         for p in pcds:
             fname = os.path.basename(p).lower()
             cat = 'good'
-            for d in categories[1:]:
+            for d in categories:
                 if d in fname:
                     cat = d
                     break
+
             all_samples.append((sub, cat, p))
 
     print(f"Total samples: {len(all_samples)}")
