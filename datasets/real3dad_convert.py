@@ -215,6 +215,8 @@ def convert_dataset(
             # 读取点与逐点语义
             xyz, sem_pp = load_pcd_xyzn(pcd_path)
 
+            print(f"{pcd_path} - {scene_id} ({split}) - {xyz.shape[0]} points, category={cat}")
+
             # 1. 检查 shape 是否为 (N,3)，否则跳过
             if xyz.ndim != 2 or xyz.shape[1] != 3:
                 print(f"[SKIP] {scene_id} - xyz shape invalid: {xyz.shape}")

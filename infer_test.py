@@ -11,6 +11,7 @@ def main():
     repo_root = os.path.dirname(os.path.abspath(__file__))
     os.chdir(repo_root)
 
+
     # hydra-core 1.0.x: 用 initialize(config_path="conf")，config_name 不带 .yaml
     with initialize(config_path="conf", job_name="infer"):
         cfg = compose(
@@ -21,7 +22,7 @@ def main():
                 # "trainer=trainer600",
                 "general.train_mode=false",
                 "general.checkpoint=saved/real3dad_exp1/last-epoch.ckpt",
-                "+infer.input_pcd=/data/Real3D-AD-PCD/toffees/test_neo/606_bulge.pcd",
+                "+infer.input_pcd=/data/Real3D-AD-PCD/diamond/test_neo/405_bulge_cut.pcd",
                 "+infer.output_pcd=out/demo_pred.pcd",
             ],
         )

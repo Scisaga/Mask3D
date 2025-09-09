@@ -569,18 +569,15 @@ class InstanceSegmentation(pl.LightningModule):
         return self.eval_step(batch, batch_idx)
 
     def get_full_res_mask(
-        self, mask, inverse_map, point2segment_full, is_heatmap=False
+        self, mask, inverse_map, point2segment_full=None, is_heatmap=False
     ):
         mask = mask.detach().cpu()[inverse_map]  # full res
 
-        if self.eval_on_segments and is_heatmap == False:
-            mask = scatter_mean(
-                mask, point2segment_full, dim=0
-            )  # full res segments
+        # 只有 eval_on_segments == True 且传入了 point2segment_full，才走“在段上评估”的路径
+        if self.eval_on_segments and (point2segment_full is not None) and (is_heatmap == False):
+            mask = scatter_mean(mask, point2segment_full, dim=0)  # full res segments
             mask = (mask > 0.5).float()
-            mask = mask.detach().cpu()[
-                point2segment_full.cpu()
-            ]  # full res points
+            mask = mask.detach().cpu()[point2segment_full.cpu()]  # full res points
 
         return mask
 
@@ -588,7 +585,9 @@ class InstanceSegmentation(pl.LightningModule):
         self, mask_cls, mask_pred, num_queries=100, num_classes=18, device=None
     ):
         if device is None:
-            device = self.device
+            device = mask_cls.device if torch.is_tensor(mask_cls) else self.device
+
+        # labels: shape = (num_queries * num_classes,)
         labels = (
             torch.arange(num_classes, device=device)
             .unsqueeze(0)
@@ -596,29 +595,47 @@ class InstanceSegmentation(pl.LightningModule):
             .flatten(0, 1)
         )
 
-        if self.config.general.topk_per_image != -1:
-            scores_per_query, topk_indices = mask_cls.flatten(0, 1).topk(
-                self.config.general.topk_per_image, sorted=True
-            )
+        flat_scores = mask_cls.flatten(0, 1)  # (num_queries * num_classes,)
+        # 计算本次可选的最大 k，避免越界
+        if self.config.general.topk_per_image == -1:
+            k = num_queries * num_classes
         else:
-            scores_per_query, topk_indices = mask_cls.flatten(0, 1).topk(
-                num_queries, sorted=True
-            )
+            k = int(self.config.general.topk_per_image)
 
+        k = min(k, int(flat_scores.numel()))
+
+        if k == 0:
+            # 返回“形状正确”的空结果
+            scores_per_query = torch.empty((0,), dtype=flat_scores.dtype, device=device)
+            topk_indices = torch.empty((0,), dtype=torch.long, device=device)
+            labels_per_query = labels[:0]
+            # 空选中的列
+            result_pred_mask = mask_pred.new_zeros((mask_pred.shape[0], 0)).float()
+            heatmap = mask_pred.new_zeros((mask_pred.shape[0], 0)).float()
+            score = scores_per_query
+            classes = labels_per_query
+            return score.cpu(), result_pred_mask.cpu(), classes.cpu(), heatmap.cpu()
+
+        # 正常 topk
+        scores_per_query, topk_indices = flat_scores.topk(k, sorted=True)
         labels_per_query = labels[topk_indices]
-        topk_indices = topk_indices // num_classes
-        mask_pred = mask_pred[:, topk_indices]
 
+        # 把扁平索引还原到 query 维度（向 0 取整相当于旧的 //）
+        topk_indices = torch.div(topk_indices, num_classes, rounding_mode="trunc")
+        mask_pred = mask_pred[:, topk_indices]  # 选出对应的 query 列
+
+        # 二值 mask 与 heatmap
         result_pred_mask = (mask_pred > 0).float()
         heatmap = mask_pred.float().sigmoid()
 
+        # 分数乘上 mask 内部平均置信度
         mask_scores_per_image = (heatmap * result_pred_mask).sum(0) / (
             result_pred_mask.sum(0) + 1e-6
         )
         score = scores_per_query * mask_scores_per_image
         classes = labels_per_query
 
-        return score, result_pred_mask, classes, heatmap
+        return score.cpu(), result_pred_mask.cpu(), classes.cpu(), heatmap.cpu()
 
     def eval_instance_step(
         self,
@@ -718,12 +735,21 @@ class InstanceSegmentation(pl.LightningModule):
                                         ][bid, curr_query]
                                     )
 
-                    scores, masks, classes, heatmap = self.get_mask_and_scores(
-                        torch.stack(new_preds["pred_logits"]).cpu(),
-                        torch.stack(new_preds["pred_masks"]).T,
-                        len(new_preds["pred_logits"]),
-                        self.model.num_classes - 1,
-                    )
+                    if len(new_preds["pred_logits"]) == 0:
+                        # 当前分辨率的点数（列数=0）
+                        n_pts = masks.shape[0]  # 此处的 masks 是上面构造的 (n_pts, num_queries) 张量
+                        # 统一返回 CPU 上的“空张量”，与下游类型/维度对齐
+                        scores  = torch.empty((0,), dtype=torch.float32).cpu()
+                        classes = torch.empty((0,), dtype=torch.long).cpu()
+                        masks   = torch.empty((n_pts, 0), dtype=torch.float32).cpu()
+                        heatmap = torch.empty((n_pts, 0), dtype=torch.float32).cpu()
+                    else:
+                        scores, masks, classes, heatmap = self.get_mask_and_scores(
+                            torch.stack(new_preds["pred_logits"]).cpu(),
+                            torch.stack(new_preds["pred_masks"]).T,
+                            len(new_preds["pred_logits"]),
+                            self.model.num_classes - 1,
+                        )
                 else:
                     scores, masks, classes, heatmap = self.get_mask_and_scores(
                         prediction[self.decoder_id]["pred_logits"][bid]
@@ -736,16 +762,19 @@ class InstanceSegmentation(pl.LightningModule):
                         self.model.num_classes - 1,
                     )
 
+                # 只有在 eval_on_segments=True 时才取 point2segment；否则传 None，避免无意义的索引
+                ps_full = target_full_res[bid]["point2segment"] if self.eval_on_segments else None
+
                 masks = self.get_full_res_mask(
                     masks,
                     inverse_maps[bid],
-                    target_full_res[bid]["point2segment"],
+                    ps_full,
                 )
 
                 heatmap = self.get_full_res_mask(
                     heatmap,
                     inverse_maps[bid],
-                    target_full_res[bid]["point2segment"],
+                    ps_full,
                     is_heatmap=True,
                 )
 
