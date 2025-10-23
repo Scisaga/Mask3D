@@ -154,8 +154,26 @@ python server.py
 ```
 
 ### 其他
+
+#### 数据集格式转换
 ```shell
 python datasets/real3dad_convert.py
+```
+
+#### ubuntu设定全局代理
+
+在终端或 .bashrc / .zshrc 中设定
+```shell
+export http_proxy="http://127.0.0.1:7890"
+export https_proxy="http://127.0.0.1:7890"
+export all_proxy="socks5://127.0.0.1:7890"
+
+# 不经过代理的地址（注意用逗号分隔，不要空格）
+export no_proxy="localhost,127.0.0.1,::1,*.local,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12"
+```
+刷新
+```shell
+source ~/.bashrc
 ```
 
 ### Git命令
