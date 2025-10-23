@@ -175,6 +175,7 @@ export no_proxy="localhost,127.0.0.1,::1,*.local,192.168.0.0/16,10.0.0.0/8,172.1
 ```shell
 source ~/.bashrc
 ```
+设定好代理后，vscode remote ssh可以正常使用codex插件，可以正常提交github
 
 ### Git命令
 
